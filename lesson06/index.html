@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>CryptoZombies front-end</title>
+    <script language="javascript" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script language="javascript" type="text/javascript" src="web3.min.js"></script>
+    <script language="javascript" type="text/javascript" src="cryptozombies_abi.js"></script>
+  </head>
+  <body>
+
+    <div id="txStatus"></div>
+    <div id="zombies"></div>
+
+    <script>
+
+      // used to store the instantiated contract
+      let cryptoZombies;
+      let userAccount;
+
+      function startApp() {
+        let cryptoZombiesAddress = "YOUR_CONTRACT_ADDRESS";
+        cryptoZombies = new web3js.eth.Contract(cryptoZombiesABI, cryptoZombiesAddress); // instantiate the contract
+
+        // monitor the currently set account, if it changes, update the userAccount
+        let accountInterval = setInterval(function() {
+          // check if account has changed
+          if (web3.eth.accounts[0] !== userAccount) {
+            userAccount = web3.eth.accounts[0];
+            // call some function to update the UI with the new account
+            getZombiesByOwner(userAccount)
+            .then(displayZombies);
+          }
+        }, 100);
+
+        /*
+        listen for a transfer event & update UI if current
+        user recieves a new zombie
+        */
+
+        // user 'filter' to only fire this code when '_to' equals 'userAccount'
+        // '_to' & '_from' are indexed in the ERC721 implementation, so they can be filtered here
+        cryptoZombies.events.Transfer( { filter: {_to: userAccount} } )
+        .on("data", function(event) {
+          let data = event.returnValues;
+          // current user recieves a zombie, now do something
+          getZombiesByOwner(userAccount).then(displayZombies);
+        }).on("error", console.error);
+      }
+
+      /*
+      web3 calls to available contract methods
+      */
+
+      // loops through an array of zombie ids and retrieves thier information from the blockchain
+      // using the getZombieDetails method
+      function displayZombies(ids) {
+        $("#zombies").empty();  // jquery, clear the div element with id 'zombies'
+        for (id of ids) {
+          getZombieDetails(id)
+          .then(zombie => {
+            $("#zombies").append(
+              `<div> class="zombie">
+                <ul>
+                  <li>Name: ${zombie.name}</li>
+                  <li>DNA: ${zombie.dna}</li>
+                  <li>Level: ${zombie.level}</li>
+                  <li>Wins: ${zombie.winCount}</li>
+                  <li>Losses: ${zombie.lossCount}</li>
+                  <li>Ready Time: ${zombie.readyTime}</li>
+                </ul>
+              </div>`
+            );
+          });
+        }
+      }
+
+      // create a new zombie and comit it to the blockchain
+      function createRandomZombie(name) {
+        $("#txStatus").text("Creating a new zombie on the blockchain. This may take a minute...");
+        // send the tx to our contract
+        return cryptoZombies.methods.createRandomZombie(name)
+        .send( {from: userAccount})
+        .on("receipt", function(receipt) {
+          $("#txStatus").text("Successfully created " + name + "!");
+          // redraw UI after successfully adding new zombie to blockchain
+          getZombiesByOwner(userAccount).then(displayZombies);
+        })
+        .on("error", function(error) {
+          $("#txStatus").text(error);
+        })
+      }
+
+      function feedOnKitty(zombieId, kittyId) {
+        $("#txStatus").text("Eating a kitty. This may take a while...");
+        // send the tx to our contract
+        return cryptoZombies.methods.feedOnKitty(zombieId, kittyId)
+        .send( {from: userAccount})
+        .on("receipt", function(receipt) {
+          $("#txStatus").text("Ate a kitty and spawned a new Zombie!");
+          // redraw UI after successfully adding new zombie to blockchain
+          getZombiesByOwner(userAccount).then(displayZombies);
+        })
+        .on("error", function(error) {
+          $("#txStatus").text(error);
+        })
+      }
+
+      function levelUp(zombieId) {
+        $("#txStatus").text("Leveling up your zombie...");
+        return cryptoZombies.methods.levelUp(zombieId)
+        .send( {from: userAccount, value: web3js.utils.toWei("0.001", "ether")})
+        .on("receipt", function(receipt) {
+          $("#txStatus").text("Power overwhelming! Zombie successfully leveled up");
+        })
+        .on("error", function(error) {
+          $("#txStatus").text(error);
+        })
+      }
+
+      function getZombieDetails(id) {
+        return cryptoZombies.methods.zombies(id).call();
+      }
+
+      function zombieToOwner(id) {
+        return cryptoZombies.methods.zombieToOwner(id).call();
+      }
+
+      function getZombiesByOwner(owner) {
+        return cryptoZombies.methods.getZombiesByOwner(owner).call();
+      }
+
+      // check if a web3 wallet is installed on the brower
+      window.addEventListener('load', function() {
+        // check if web3 has been injected by the browser
+        if (typeof web3 !== 'undefined') {
+          // use wallet provider
+          web3js = new Web3(web3.currentProvider);
+        } else {
+          // handle situation where no wallet available
+        }
+        startApp()
+      })
+
+    </script>
+  </body>
+</html>
